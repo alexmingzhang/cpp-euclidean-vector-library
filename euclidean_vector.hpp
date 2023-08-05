@@ -1,3 +1,11 @@
+/**
+ * @file euclidean_vector.hpp
+ * @author Alex Zhang (GitHub: alexmingzhang)
+ * @brief Header-only C++20 library for Euclidean vectors in n-dimensions
+ * @date 2023-08-05
+ *
+ */
+
 #ifndef EUCLIDEAN_VECTOR_HPP
 #define EUCLIDEAN_VECTOR_HPP
 
@@ -14,10 +22,10 @@ template <typename T>
 concept AcceptableScalar = 
     std::equality_comparable<T> &&
     requires(T a, T b) {
-        { a + b } -> std::same_as<T>; // Closure of addition
-        { a - b } -> std::same_as<T>; // Closure of subtraction
-        { a * b } -> std::same_as<T>; // Closure of multiplication
-        { a / b } -> std::same_as<T>; // Closure of division
+        { a + b } -> std::same_as<T>; // Closure under addition
+        { a - b } -> std::same_as<T>; // Closure under subtraction
+        { a * b } -> std::same_as<T>; // Closure under multiplication
+        { a / b } -> std::same_as<T>; // Closure under division
     };
 // clang-format on
 
@@ -43,7 +51,7 @@ public:
     constexpr EucVec(const EucVec &) = default;
     constexpr EucVec(EucVec &&) noexcept = default;
     constexpr EucVec(std::initializer_list<T> init) {
-        std::copy(init.begin(), init.end(), m_data.begin());
+        std::move(init.begin(), init.end(), m_data.begin());
     };
 
     // Destructor
@@ -51,6 +59,7 @@ public:
 
     // Assignment
     constexpr EucVec &operator=(const EucVec &) = default;
+    constexpr EucVec &operator=(EucVec &&) noexcept = default;
 
     // Comparison
     constexpr bool operator==(const EucVec &) const = default;
@@ -107,13 +116,13 @@ public:
     constexpr void fill(const T &value) { m_data.fill(value); }
     constexpr void swap(EucVec &other) noexcept { m_data.swap(other.m_data); }
 
-    // Operations
+    // Specialized Operations
     [[nodiscard]] constexpr T dot(const EucVec &) const;
     [[nodiscard]] constexpr T norm() const;
     [[nodiscard]] constexpr T norm_sqr() const;
     [[nodiscard]] constexpr EucVec normalize() const;
     [[nodiscard]] constexpr T dist_to(const EucVec &) const;
-    [[nodiscard]] constexpr T is_orthogonal_to(const EucVec &) const;
+    [[nodiscard]] constexpr bool is_orthogonal_to(const EucVec &) const;
     [[nodiscard]] constexpr T angle_between(const EucVec &) const;
     [[nodiscard]] constexpr EucVec project_onto(const EucVec &) const;
     [[nodiscard]] constexpr EucVec cross(const EucVec &) const
@@ -150,7 +159,7 @@ constexpr T EucVec<T, N>::dist_to(const EucVec<T, N> &other) const {
 }
 
 template <AcceptableScalar T, std::size_t N>
-constexpr T EucVec<T, N>::is_orthogonal_to(const EucVec<T, N> &other) const {
+constexpr bool EucVec<T, N>::is_orthogonal_to(const EucVec<T, N> &other) const {
     return this->dot(other) == 0;
 }
 
@@ -162,7 +171,7 @@ constexpr T EucVec<T, N>::angle_between(const EucVec<T, N> &other) const {
 template <AcceptableScalar T, std::size_t N>
 constexpr EucVec<T, N> EucVec<T, N>::project_onto(
     const EucVec<T, N> &other) const {
-    return (this->dot(other) / this->dot(*this)) * *this;
+    return (other.dot(*this) / other.dot(other)) * other;
 }
 
 template <AcceptableScalar T, std::size_t N>
@@ -236,14 +245,14 @@ template <AcceptableScalar T, std::size_t N>
 constexpr EucVec<T, N> operator/(const EucVec<T, N> &vec, const T &scalar) {
     EucVec<T, N> quot;
     std::transform(vec.begin(), vec.end(), quot.begin(),
-                   [&scalar](const T &val) { return val / scalar; });
+                   [scalar](const T &val) { return val / scalar; });
     return quot;
 }
 
 template <AcceptableScalar T, std::size_t N>
 constexpr EucVec<T, N> &operator/=(EucVec<T, N> &vec, const T &scalar) {
     std::transform(vec.begin(), vec.end(), vec.begin(),
-                   [&scalar](const T &val) { return val / scalar; });
+                   [scalar](const T &val) { return val / scalar; });
     return vec;
 }
 
