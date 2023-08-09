@@ -28,11 +28,12 @@ int main() {
     std::cout << v1 << " . " << v2 << " = " << v1.dot(v2) << '\n';
     std::cout << v1 << " * " << s1 << " = " << v1 * s1 << '\n';
     std::cout << "Euclidean norm of " << v1 << ": " << v1.norm() << '\n';
+    std::cout << "3-norm of " << v1 << ": " << v1.norm<3>() << '\n';
     std::cout << "Normalized vector " << v1 << ": " << v1.normalize() << '\n';
     std::cout << "Distance between " << v1 << " and " << v2 << ": "
               << v1.dist_to(v2) << '\n';
     std::cout << "Angle between " << v1 << " and " << v2 << ": "
-              << v1.angle_between(v2) << " radians" << '\n';
+              << v1.radians_between(v2) << " radians" << '\n';
     std::cout << "Projection of " << v1 << " onto " << v2 << ": "
               << v1.project_onto(v2) << '\n';
 
