@@ -13,7 +13,9 @@
 #include <array>
 #include <cmath>
 #include <compare>
+#include <complex>
 #include <concepts>
+#include <exception>
 #include <initializer_list>
 #include <limits>
 #include <numbers>
@@ -34,28 +36,36 @@
 template <typename ScalarT>
 concept AcceptableScalar = std::equality_comparable<ScalarT> && requires(ScalarT a, ScalarT b) {
     // Closure under arithmetic operations
+    { +a } -> std::convertible_to<ScalarT>;
+    { -a } -> std::convertible_to<ScalarT>;
     { a + b } -> std::convertible_to<ScalarT>;
     { a - b } -> std::convertible_to<ScalarT>;
     { a * b } -> std::convertible_to<ScalarT>;
     { a / b } -> std::convertible_to<ScalarT>;
-    { -a } -> std::convertible_to<ScalarT>;
-
-    // Check for existence of +=, -=, *=, /=
-    a += b; 
-    a -= b;
-    a *= b;
-    a /= b;
+    { a += b } -> std::convertible_to<ScalarT>;
+    { a -= b } -> std::convertible_to<ScalarT>;
+    { a *= b } -> std::convertible_to<ScalarT>;
+    { a /= b } -> std::convertible_to<ScalarT>;
 };
 // clang-format on
 
 /**
- * @brief Specifies real number types for EucVec.
+ * @brief Specifies real number types for EucVec
  *
  * In most computer architectures, integer and floating point types
  * represent an adequate subset of real numbers.
  */
 template <typename R>
 concept RealNumber = std::integral<R> || std::floating_point<R>;
+
+/**
+ * @brief Specifies complex number types for EucVec
+ *
+ * Expected to use std::complex for complex numbers
+ */
+template <typename C>
+concept ComplexNumber = requires { typename C::value_type; } &&
+                        std::is_same_v<C, std::complex<typename C::value_type>>;
 
 /**
  * @brief Specifies types that support std::abs() in header <cmath>
@@ -70,17 +80,13 @@ concept AbsComputable = requires(T a) {
 
 /// @defgroup helper_functions Helper functions
 /// @{
-template <AbsComputable T>
-static constexpr auto abs_val =
-    [](const T &scalar) -> T { return std::abs(scalar); };
-
 template <AcceptableScalar ScalarT>
 static constexpr auto square =
     [](const ScalarT &scalar) -> ScalarT { return scalar * scalar; };
 
 template <AcceptableScalar ScalarT, std::integral I>
 static constexpr auto int_pow = [](ScalarT base, I exponent) -> ScalarT {
-    ScalarT result = 1;
+    ScalarT result = ScalarT{1};
     while (exponent > 0) {
         if (exponent % 2 != 0) {
             result *= base;
@@ -107,6 +113,7 @@ static constexpr auto int_pow = [](ScalarT base, I exponent) -> ScalarT {
  * @tparam N Size of the Euclidean vector as std::size_t
  */
 template <AcceptableScalar ScalarT, std::size_t N>
+    requires(N >= 0)
 class EucVec {
 public:
     /// @defgroup member_types Member types
@@ -260,7 +267,7 @@ public:
      * @param other The other EucVec
      * @return Reference to this EucVec which has become the cross product
      */
-    [[nodiscard]] constexpr EucVec &cross_in_place(const EucVec &other) const
+    constexpr EucVec &cross_in_place(const EucVec &other) const
         requires(N == 3)
     {
         m_data[0] = m_data[1] * other[2] - m_data[2] * other[1];
@@ -274,7 +281,7 @@ public:
     /// @defgroup vector_norms Vector norms
     /// @{
     /**
-     * @brief Calculates the p-norm of this EucVec for positive integer p
+     * @brief Calculates the p-norm of this EucVec
      *
      * For EucVec @f$\vec{v}@f$ of size @f$n@f$ and real number @f$p@f$ where
      * @f$p > 0 @f$, the @f$p@f$-norm of @f$\vec{v}@f$ is defined as
@@ -287,26 +294,40 @@ public:
      * For more info, see https://ncatlab.org/nlab/show/p-norm#Generalizations.
      *
      * @warning Instantiates a new instance of norm() for each distinct value of
-     * p used in your program.
+     * p used in your program. For floating-point ScalarT, may return `inf` for
+     * large enough p.
      * @tparam p Integer value that must be greater than 0
      * @return The p-norm of this EucVec
+     *
+     * @pre p > 0
+     *
+     * @see EucVec::pnorm
      */
     template <long long p = 2>
     [[nodiscard]] constexpr ScalarT norm() const
         requires RealNumber<ScalarT> && (p > 0)
     {
-        // Constexpr branches determined at compile time
+        // "Manhattan norm" or "Taxicab norm"
         if constexpr (p == 1) {
-            return std::sqrt(
-                std::transform_reduce(this->begin(), this->end(), ScalarT{},
-                                      std::plus<ScalarT>(), std::abs));
-        } else if constexpr (p == 2) {
+            return std::transform_reduce(this->begin(), this->end(), ScalarT{},
+                                         std::plus<ScalarT>(),
+                                         std::abs<ScalarT>);
+        }
+
+        // Euclidean norm
+        if constexpr (p == 2) {
             return std::sqrt(
                 std::transform_reduce(this->begin(), this->end(), ScalarT{},
                                       std::plus<ScalarT>(), square<ScalarT>));
-        } else if constexpr (p == std::numeric_limits<ScalarT>::max()) {
+        }
+
+        // Infinity norm or supremum norm
+        if constexpr (p == std::numeric_limits<long long>::max()) {
             return *std::max_element(this->begin(), this->end());
-        } else if constexpr (p % 2 == 0) {
+        }
+
+        // Even integer norm; skip absolute value
+        if constexpr (p % 2 == 0) {
             return std::pow(
                 std::transform_reduce(
                     this->begin(), this->end(), ScalarT{}, std::plus<ScalarT>(),
@@ -314,7 +335,9 @@ public:
                         return int_pow<ScalarT, long long>(s, p);
                     }),
                 1.0L / static_cast<long double>(p));
-        } else if constexpr (p % 2 != 0) {
+        }
+
+        if constexpr (p % 2 != 0) {
             return std::pow(
                 std::transform_reduce(
                     this->begin(), this->end(), ScalarT{}, std::plus<ScalarT>(),
@@ -322,9 +345,9 @@ public:
                         return std::abs(int_pow<ScalarT, long long>(s, p));
                     }),
                 1.0L / static_cast<long double>(p));
-        } else {
-            __builtin_unreachable();
         }
+
+        throw std::runtime_error("Could not determine norm");
     }
 
     /**
@@ -333,9 +356,42 @@ public:
      * Identical to EucVec::norm<2>
      *
      * @return The length of this EucVec.
-     * @see norm
+     * @see EucVec::norm
      */
-    [[nodiscard]] constexpr ScalarT length() const { return this->norm<2>(); }
+    [[nodiscard]] constexpr auto length() const { return this->norm<2>(); }
+
+    /**
+     * @brief Returns the infinity norm or supremum norm of this EucVec
+     *
+     * The infinity norm is defined simply as the supremum of the elements in
+     * the vector. In our case with finitely-sized EucVecs, we can simply take
+     * the maximum element as the supremum.
+     *
+     * Identical to EucVec::norm<std::numeric_limits<long long>::max()>
+     *
+     * @return The maximum element of this EucVec
+     */
+    [[nodiscard]] constexpr ScalarT infnorm() const {
+        return this->norm<std::numeric_limits<long long>::max()>();
+    }
+
+    /**
+     * @brief Calculates the p-norm of a complex-valued EucVec
+     *
+     * @warning Instantiates a new instance of norm() for each distinct value of
+     * p used in your program.
+     * @tparam p Integer value that must be greater than 0
+     * @return The p-norm of this EucVec
+     */
+    template <long long p = 2>
+    [[nodiscard]] constexpr auto norm() const
+        requires ComplexNumber<ScalarT> && (p > 0)
+    {
+        EucVec<typename ScalarT::value_type, N> abs_vec;
+        std::transform(this->begin(), this->end(), abs_vec.begin(),
+                       std::abs<typename ScalarT::value_type>);
+        return abs_vec.template norm<p>();
+    }
 
     /**
      * @brief Returns the p-norm of this EucVec
@@ -350,17 +406,31 @@ public:
      *
      * @param p Some real number p where p > 0
      * @return The p-norm of this EucVec
+     *
+     * @pre p > 0
+     * @see EucVec::norm
      */
     template <RealNumber R>
-    [[nodiscard]] constexpr ScalarT pnorm(R p) const
+    [[nodiscard]] constexpr auto pnorm(R p) const
         requires RealNumber<ScalarT>
     {
-        static_assert(p > 0);
+        assert(p > R{0});
         return std::pow(
             std::transform_reduce(
                 this->begin(), this->end(), ScalarT{}, std::plus<ScalarT>(),
                 [p](const ScalarT &val) { return std::pow(std::abs(val), p); }),
-            static_cast<ScalarT>(1.0) / p);
+            R{1} / p);
+    }
+
+    template <RealNumber R>
+    [[nodiscard]] constexpr auto pnorm(R p) const
+        requires ComplexNumber<ScalarT>
+    {
+        assert(p > R{0});
+        EucVec<typename ScalarT::value_type, N> abs_vec;
+        std::transform(this->begin(), this->end(), abs_vec.begin(),
+                       std::abs<typename ScalarT::value_type>);
+        return abs_vec.pnorm(p);
     }
 
     /**
@@ -499,8 +569,7 @@ public:
      * @param other The other EucVec
      * @return Reference to this EucVec which has been projected
      */
-    [[nodiscard]] constexpr EucVec &project_onto_in_place(
-        const EucVec &other) const {
+    constexpr EucVec &project_onto_in_place(const EucVec &other) const {
         return (*this = (other.dot(*this) / other.dot(other)) * other);
     }
 
@@ -535,7 +604,7 @@ public:
         requires RealNumber<ScalarT>
     {
         const ScalarT radians = this->radians_between(other);
-        return radians == static_cast<ScalarT>(0) ||
+        return radians == ScalarT{} ||
                radians == static_cast<ScalarT>(std::numbers::pi);
     }
     /// @}
@@ -546,6 +615,32 @@ private:
 
 /// @defgroup arithmetic_operations Arithmetic Operations
 /// @{
+/**
+ * @brief Unary plus operator for EucVec
+ * @return A new EucVec with the unary plus operator applied to each of its
+ * elements
+ */
+template <AcceptableScalar ScalarT, std::size_t N>
+constexpr EucVec<ScalarT, N> operator+(const EucVec<ScalarT, N> &vec) {
+    EucVec<ScalarT, N> copy;
+    std::transform(vec.begin(), vec.end(), copy.begin(),
+                   [](const auto &val) { return +val; });
+    return copy;
+}
+
+/**
+ * @brief Unary minus operator for EucVec
+ * @return A new EucVec with the unary minus operator applied to each of its
+ * elements
+ */
+template <AcceptableScalar ScalarT, std::size_t N>
+constexpr EucVec<ScalarT, N> operator-(const EucVec<ScalarT, N> &vec) {
+    EucVec<ScalarT, N> neg;
+    std::transform(vec.begin(), vec.end(), neg.begin(),
+                   [](const auto &val) { return -val; });
+    return neg;
+}
+
 /**
  * @brief Vector addition
  * @return The sum of the two EucVecs
@@ -600,12 +695,13 @@ constexpr EucVec<ScalarT, N> &operator-=(EucVec<ScalarT, N> &lhs,
  * @brief Scalar multiplication
  * @return The product of the scalar and EucVec
  */
-template <AcceptableScalar ScalarT, std::size_t N>
-constexpr EucVec<ScalarT, N> operator*(const ScalarT &scalar,
+template <AcceptableScalar ScalarT, std::size_t N,
+          AcceptableScalar OtherScalarT>
+constexpr EucVec<ScalarT, N> operator*(const OtherScalarT &scalar,
                                        const EucVec<ScalarT, N> &vec) {
     EucVec<ScalarT, N> prod;
     std::transform(vec.begin(), vec.end(), prod.begin(),
-                   [scalar](const ScalarT &val) { return val * scalar; });
+                   [scalar](const auto &val) { return val * scalar; });
     return prod;
 }
 
@@ -613,9 +709,10 @@ constexpr EucVec<ScalarT, N> operator*(const ScalarT &scalar,
  * @brief Scalar multiplication
  * @return The product of the EucVec and scalar
  */
-template <AcceptableScalar ScalarT, std::size_t N>
+template <AcceptableScalar ScalarT, std::size_t N,
+          AcceptableScalar OtherScalarT>
 constexpr EucVec<ScalarT, N> operator*(const EucVec<ScalarT, N> &vec,
-                                       const ScalarT &scalar) {
+                                       const OtherScalarT &scalar) {
     return scalar * vec;
 }
 
@@ -623,22 +720,12 @@ constexpr EucVec<ScalarT, N> operator*(const EucVec<ScalarT, N> &vec,
  * @brief Scalar multiplication
  * @return Reference to the left-hand EucVec which has become the product
  */
-template <AcceptableScalar ScalarT, std::size_t N>
+template <AcceptableScalar ScalarT, std::size_t N,
+          AcceptableScalar OtherScalarT>
 constexpr EucVec<ScalarT, N> &operator*=(EucVec<ScalarT, N> &vec,
-                                         const ScalarT &scalar) {
+                                         const OtherScalarT &scalar) {
     std::transform(vec.begin(), vec.end(), vec.begin(),
-                   [scalar](const ScalarT &val) { return val * scalar; });
-    return vec;
-}
-
-/**
- * @brief Unary negation
- * @return The product of the EucVec and scalar -1
- */
-template <AcceptableScalar ScalarT, std::size_t N>
-constexpr EucVec<ScalarT, N> operator-(const EucVec<ScalarT, N> &vec) {
-    std::transform(vec.begin(), vec.end(), vec.begin(),
-                   [](const ScalarT &val) { return -val; });
+                   [scalar](const auto &val) { return val * scalar; });
     return vec;
 }
 
@@ -646,12 +733,13 @@ constexpr EucVec<ScalarT, N> operator-(const EucVec<ScalarT, N> &vec) {
  * @brief Scalar division
  * @return The quotient of the EucVec and scalar
  */
-template <AcceptableScalar ScalarT, std::size_t N>
+template <AcceptableScalar ScalarT, std::size_t N,
+          AcceptableScalar OtherScalarT>
 constexpr EucVec<ScalarT, N> operator/(const EucVec<ScalarT, N> &vec,
-                                       const ScalarT &scalar) {
+                                       const OtherScalarT &scalar) {
     EucVec<ScalarT, N> quot;
     std::transform(vec.begin(), vec.end(), quot.begin(),
-                   [scalar](const ScalarT &val) { return val / scalar; });
+                   [scalar](const auto &val) { return val / scalar; });
     return quot;
 }
 
@@ -659,11 +747,12 @@ constexpr EucVec<ScalarT, N> operator/(const EucVec<ScalarT, N> &vec,
  * @brief Scalar division
  * @return Reference to the left-hand EucVec which has become the quotient
  */
-template <AcceptableScalar ScalarT, std::size_t N>
+template <AcceptableScalar ScalarT, std::size_t N,
+          AcceptableScalar OtherScalarT>
 constexpr EucVec<ScalarT, N> &operator/=(EucVec<ScalarT, N> &vec,
-                                         const ScalarT &scalar) {
+                                         const OtherScalarT &scalar) {
     std::transform(vec.begin(), vec.end(), vec.begin(),
-                   [scalar](const ScalarT &val) { return val / scalar; });
+                   [scalar](const auto &val) { return val / scalar; });
     return vec;
 }
 /// @}
