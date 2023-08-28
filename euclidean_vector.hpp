@@ -16,7 +16,6 @@
 #include <complex>
 #include <concepts>
 #include <exception>
-#include <initializer_list>
 #include <limits>
 #include <numbers>
 #include <numeric>
@@ -26,16 +25,13 @@
 /**
  * @brief Specifies suitable scalar types for EucVec.
  *
- * Ensures that the scalar type is:
- * - [Equality
+ * Ensures that the scalar type is [equality
  * comparable](https://en.cppreference.com/w/cpp/concepts/equality_comparable)
- * - Has definitions for the arithmetic operators `+, -, *, /, +=, -=, *=, /=`
- * - Is closed under the operators `+, -, *, /`
+ * and closed under the standard arithmetic operations.
  */
 // clang-format off
 template <typename ScalarT>
 concept AcceptableScalar = std::equality_comparable<ScalarT> && requires(ScalarT a, ScalarT b) {
-    // Closure under arithmetic operations
     { +a } -> std::convertible_to<ScalarT>;
     { -a } -> std::convertible_to<ScalarT>;
     { a + b } -> std::convertible_to<ScalarT>;
@@ -113,111 +109,8 @@ static constexpr auto int_pow = [](ScalarT base, I exponent) -> ScalarT {
  * @tparam N Size of the Euclidean vector as std::size_t
  */
 template <AcceptableScalar ScalarT, std::size_t N>
-    requires(N >= 0)
-class EucVec {
+class EucVec : public std::array<ScalarT, N> {
 public:
-    /// @defgroup member_types Member types
-    /// @{
-    using container = std::array<ScalarT, N>;
-    using value_type = ScalarT;
-    using size_type = typename container::size_type;
-    using difference_type = typename container::difference_type;
-    using reference = value_type &;
-    using const_reference = const value_type &;
-    using pointer = value_type *;
-    using const_pointer = const value_type *;
-    using iterator = typename container::iterator;
-    using const_iterator = typename container::const_iterator;
-    using reverse_iterator = typename container::reverse_iterator;
-    using const_reverse_iterator = typename container::const_reverse_iterator;
-    /// @} member_types
-
-    /// @defgroup constructors Constructors
-    /// @{
-    constexpr EucVec() noexcept = default;
-    constexpr EucVec(const EucVec &) = default;
-    constexpr EucVec(EucVec &&) noexcept = default;
-    constexpr EucVec(std::initializer_list<ScalarT> init) {
-        std::move(init.begin(), init.end(), m_data.begin());
-    };
-    /// @} constructors
-
-    /// @defgroup destructors Destructors
-    /// @{
-    constexpr ~EucVec() noexcept = default;
-    /// @} destructors
-
-    /// @defgroup assignment Assignment
-    /// @{
-    constexpr EucVec &operator=(const EucVec &) = default;
-    constexpr EucVec &operator=(EucVec &&) noexcept = default;
-    /// @} assignment
-
-    /// @defgroup comparison Comparison
-    /// @{
-    constexpr bool operator==(const EucVec &) const = default;
-    constexpr bool operator!=(const EucVec &) const = default;
-    /// @} comparison
-
-    /// @defgroup element_access Element Access
-    /// @{
-    constexpr reference at(size_type pos) { return m_data.at(pos); }
-    constexpr const_reference at(size_type pos) const { return m_data.at(pos); }
-    constexpr reference operator[](size_type pos) { return m_data[pos]; }
-    constexpr const_reference operator[](size_type pos) const {
-        return m_data[pos];
-    }
-    constexpr reference front() { return m_data.front(); }
-    constexpr const_reference front() const { return m_data.front(); }
-    constexpr reference back() { return m_data.back(); }
-    constexpr const_reference back() const { return m_data.back(); }
-    constexpr pointer data() noexcept { return m_data.data(); }
-    constexpr const_pointer *data() const noexcept { return m_data.data(); }
-    /// @} element_access
-
-    /// @defgroup iterators Iterators
-    /// @{
-    constexpr iterator begin() noexcept { return m_data.begin(); }
-    constexpr const_iterator begin() const noexcept { return m_data.begin(); }
-    constexpr const_iterator cbegin() const noexcept { return m_data.cbegin(); }
-    constexpr iterator end() noexcept { return m_data.end(); }
-    constexpr const_iterator end() const noexcept { return m_data.end(); }
-    constexpr const_iterator cend() const noexcept { return m_data.cend(); }
-    constexpr reverse_iterator rbegin() noexcept { return m_data.rbegin(); }
-    constexpr const_reverse_iterator rbegin() const noexcept {
-        return m_data.rbegin();
-    }
-    constexpr const_reverse_iterator crbegin() const noexcept {
-        return m_data.crbegin();
-    }
-    constexpr reverse_iterator rend() noexcept { return m_data.rend(); }
-    constexpr const_reverse_iterator rend() const noexcept {
-        return m_data.rend();
-    }
-    constexpr const_reverse_iterator crend() const noexcept {
-        return m_data.crend();
-    }
-    /// @} iterators
-
-    /// @defgroup capacity Capacity
-    /// @{
-    [[nodiscard]] constexpr bool empty() const noexcept {
-        return m_data.empty();
-    }
-    [[nodiscard]] constexpr size_type size() const noexcept {
-        return m_data.size();
-    }
-    [[nodiscard]] constexpr size_type max_size() const noexcept {
-        return m_data.max_size();
-    }
-    /// @} capacity
-
-    /// @defgroup container_operations Container Operations
-    /// @{
-    constexpr void fill(const ScalarT &value) { m_data.fill(value); }
-    constexpr void swap(EucVec &other) noexcept { m_data.swap(other.m_data); }
-    /// @} container_operations
-
     /// @defgroup vector_operations Vector Operations
     /// @{
     /**
@@ -225,8 +118,7 @@ public:
      *
      * For EucVec @f$\vec{u}@f$ and @f$\vec{v}@f$ of size @f$n@f$, the dot
      * product is defined as
-     * @f$ \langle \vec{u}_1 \cdot \vec{v}_1, \ldots,
-     * \vec{u}_n \cdot \vec{v}_n \rangle @f$
+     * @f$ \vec{u}_1 \cdot \vec{v}_1 + \cdots + \vec{u}_n \cdot \vec{v}_n @f$
      *
      * @param other The other EucVec
      * @return The dot product of this EucVec with the other EucVec
@@ -250,10 +142,10 @@ public:
     [[nodiscard]] constexpr EucVec cross(const EucVec &other) const
         requires(N == 3)
     {
-        return EucVec<ScalarT, 3>(
-            {m_data[1] * other[2] - m_data[2] * other[1],
-             m_data[2] * other[0] - m_data[0] * other[2],
-             m_data[0] * other[1] - m_data[1] * other[0]});
+        return EucVec<ScalarT, 3>{
+            this->operator[](1) * other[2] - this->operator[](2) * other[1],
+            this->operator[](2) * other[0] - this->operator[](0) * other[2],
+            this->operator[](0) * other[1] - this->operator[](1) * other[0]};
     }
 
     /**
@@ -267,14 +159,10 @@ public:
      * @param other The other EucVec
      * @return Reference to this EucVec which has become the cross product
      */
-    constexpr EucVec &cross_in_place(const EucVec &other) const
+    constexpr EucVec &cross_in_place(const EucVec &other)
         requires(N == 3)
     {
-        m_data[0] = m_data[1] * other[2] - m_data[2] * other[1];
-        m_data[1] = m_data[2] * other[0] - m_data[0] * other[2];
-        m_data[2] = m_data[0] * other[1] - m_data[1] * other[0];
-
-        return *this;
+        return (*this) = cross(other);
     }
     /// @} vector_operations
 
@@ -307,27 +195,18 @@ public:
     [[nodiscard]] constexpr ScalarT norm() const
         requires RealNumber<ScalarT> && (p > 0)
     {
-        // "Manhattan norm" or "Taxicab norm"
         if constexpr (p == 1) {
+            // "Manhattan norm" or "Taxicab norm"
             return std::transform_reduce(this->begin(), this->end(), ScalarT{},
                                          std::plus<ScalarT>(),
                                          std::abs<ScalarT>);
-        }
-
-        // Euclidean norm
-        if constexpr (p == 2) {
+        } else if constexpr (p == 2) {
+            // Euclidean norm
             return std::sqrt(
                 std::transform_reduce(this->begin(), this->end(), ScalarT{},
                                       std::plus<ScalarT>(), square<ScalarT>));
-        }
-
-        // Infinity norm or supremum norm
-        if constexpr (p == std::numeric_limits<long long>::max()) {
-            return *std::max_element(this->begin(), this->end());
-        }
-
-        // Even integer norm; skip absolute value
-        if constexpr (p % 2 == 0) {
+        } else if constexpr (p % 2 == 0) {
+            // Even integer norm; skip absolute value
             return std::pow(
                 std::transform_reduce(
                     this->begin(), this->end(), ScalarT{}, std::plus<ScalarT>(),
@@ -335,9 +214,8 @@ public:
                         return int_pow<ScalarT, long long>(s, p);
                     }),
                 1.0L / static_cast<long double>(p));
-        }
-
-        if constexpr (p % 2 != 0) {
+        } else if constexpr (p % 2 != 0) {
+            // Odd integer norm
             return std::pow(
                 std::transform_reduce(
                     this->begin(), this->end(), ScalarT{}, std::plus<ScalarT>(),
@@ -345,9 +223,9 @@ public:
                         return std::abs(int_pow<ScalarT, long long>(s, p));
                     }),
                 1.0L / static_cast<long double>(p));
+        } else {
+            throw std::runtime_error("Could not determine norm");
         }
-
-        throw std::runtime_error("Could not determine norm");
     }
 
     /**
@@ -372,7 +250,7 @@ public:
      * @return The maximum element of this EucVec
      */
     [[nodiscard]] constexpr ScalarT infnorm() const {
-        return this->norm<std::numeric_limits<long long>::max()>();
+        return *std::max_element(this->begin(), this->end());
     }
 
     /**
@@ -608,9 +486,6 @@ public:
                radians == static_cast<ScalarT>(std::numbers::pi);
     }
     /// @}
-
-private:
-    container m_data;
 };
 
 /// @defgroup arithmetic_operations Arithmetic Operations
